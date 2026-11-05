@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>No Pixels, No Search, No Overrides: Teaching a Yes/No Model to Play Real Doom</title>
+<title>I Taught a Small AI to Play Doom With Yes-or-No Questions</title>
 <meta name="description" content="How Adarsh Singh taught Laya, a 421M-parameter yes/no decision model, to play the real Doom engine: one-step facts instead of pixels, one question per action, no overrides, a dataset built from written priorities, and replayable proof.">
 <meta property="og:type" content="article">
-<meta property="og:title" content="No Pixels, No Search, No Overrides: Teaching a Yes/No Model to Play Real Doom">
+<meta property="og:title" content="I Taught a Small AI to Play Doom With Yes-or-No Questions">
 <meta property="og:description" content="How I turned the Doom engine into plain sentences, built a 64,248-question dataset from written priorities, and fine-tuned a 421M-parameter model until it beat the rules that trained it.">
 <meta property="og:image" content="https://anexus5919.github.io/laya-doom/media/dash-doom.jpg">
 <meta property="og:url" content="https://anexus5919.github.io/laya-doom/">
@@ -94,7 +94,7 @@ h1, h2, h3 { text-wrap: balance; }
 .masthead b { color: var(--hero-ink); font-weight: 600; }
 .hero-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; align-items: center; margin-top: 44px; }
 .eyebrow { font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hero-dim); margin: 0 0 18px; }
-.hero h1 { font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: clamp(52px, 7.6vw, 112px); line-height: 0.88; letter-spacing: 0.005em; margin: 0; }
+.hero h1 { font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: clamp(46px, 6vw, 92px); line-height: 0.9; letter-spacing: 0.005em; margin: 0; }
 .hero h1 span { display: block; }
 .hero h1 .acc { color: var(--hero-accent); }
 .h1-sub { font-family: var(--font-display); font-weight: 600; text-transform: uppercase; font-size: clamp(22px, 2.6vw, 32px); letter-spacing: 0.02em; line-height: 1.1; color: var(--hero-ink); margin: 18px 0 0; }
@@ -292,8 +292,7 @@ figure img[src$=".gif"] { width: auto; max-width: 100%; margin: 0 auto; }
     <div class="hero-grid">
       <div>
         <p class="eyebrow">A technical write-up · November 2026</p>
-        <h1><span>No pixels.</span><span>No search.</span><span class="acc">No overrides.</span></h1>
-        <p class="h1-sub">Teaching a yes/no model to play real Doom</p>
+        <h1>I taught a small AI to play Doom <span class="acc">with <span style="display:inline;white-space:nowrap">yes-or-no</span> questions</span></h1>
         <p class="dek">How I turned the Doom engine into plain sentences, built a 64,248-question dataset from written priorities, and fine-tuned a 421-million-parameter model until it beat the rules that trained it.</p>
         <p class="byline"><strong>Adarsh Singh</strong> · November 2026 · about 25 minutes to read</p>
       </div>
@@ -623,6 +622,9 @@ cfg = TrainConfig(
         </div>
       </figure>
 <div class="stats"><div class="stat"><b>1,574</b><span>decisions, every one Laya's</span></div><div class="stat"><b>184</b><span>shots for 16 kills, pistol only</span></div><div class="stat"><b>28</b><span>shots fired while stepping away from a close enemy</span></div><div class="stat"><b>190 ms</b><span>median time per Laya call</span></div></div>
+<h3>The same game in my dashboard</h3>
+<p>I built a dashboard to watch Laya play. The clip below shows it stepping through this same game's log: each frame is the screen Laya decided on, its P(yes) for all 11 actions with the sentence behind each one, and the running kills and health. It covers steps 400 to 520, slowed to three decisions per second so the answers can be read. Kills 7 to 12 happen in it, and so do several shots fired while backing away.</p>
+<figure class="wide"><video src="media/dashboard-backoff-highlight.mp4" poster="media/dashboard-poster.jpg" controls preload="metadata" playsinline aria-label="The dashboard stepping through steps 400 to 520 of the 16-kill game"></video><figcaption>Steps 400 to 520 in my dashboard, slowed to three decisions per second. Left: the screen Laya decided on. Right: its P(yes) for each action and the sentence behind it.</figcaption></figure><figure class="wide" data-full-dashboard><video src="media/dashboard-e1m2-full.mp4" poster="media/dashboard-poster.jpg" controls preload="none" playsinline aria-label="The dashboard replaying the whole 16-kill game at real game speed"></video><figcaption>The whole game in the dashboard, all 1,574 decisions at real game speed (3 minutes).</figcaption></figure>
 <div class="chart" id="chart-curve"><h4>Kills and health through the game</h4><p class="sub">Fourteen kills in the first 66 seconds, then two minutes of exploring at a steady 35 health.</p><svg viewBox="0 0 900 300" role="img" aria-label="Kills rise from 0 to 14 in the first 66 seconds and reach 16 at 160 seconds; health falls from 100 to 35 by 63 seconds and stays there"></svg><div class="tip" role="status"></div></div>
 <div class="chart" id="chart-actions"><h4>What Laya chose across 1,574 decisions</h4><p class="sub">Forward and 30° turns are three quarters of all actions; 184 shots produced 16 kills.</p><svg viewBox="0 0 900 330" role="img" aria-label="Actions chosen: forward 728, turn left 30 degrees 351, turn right 30 degrees 207, shoot 184, turn left 5 degrees 37, turn right 5 degrees 32, use 18, step right 12, step left 3, back 2"></svg><div class="tip" role="status"></div></div><details class="numbers"><summary>Show the numbers behind these charts</summary>
         <div class="table-wrap"><table>
