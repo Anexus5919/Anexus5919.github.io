@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>No Pixels, No Search, No Overrides: Teaching a Yes/No Model to Play Real Doom</title>
+<meta name="description" content="How Adarsh Singh taught Laya, a 421M-parameter yes/no decision model, to play the real Doom engine: one-step facts instead of pixels, one question per action, no overrides, a dataset built from written priorities, and replayable proof.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="No Pixels, No Search, No Overrides: Teaching a Yes/No Model to Play Real Doom">
+<meta property="og:description" content="How I turned the Doom engine into plain sentences, built a 64,248-question dataset from written priorities, and fine-tuned a 421M-parameter model until it beat the rules that trained it.">
+<meta property="og:image" content="https://anexus5919.github.io/laya-doom/media/dash-doom.jpg">
+<meta property="og:url" content="https://anexus5919.github.io/laya-doom/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="author" content="Adarsh Singh">
+<link rel="canonical" href="https://anexus5919.github.io/laya-doom/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e1012'/%3E%3Ccircle cx='32' cy='32' r='15' fill='none' stroke='%23ff5747' stroke-width='5'/%3E%3Cpath d='M32 9v13M32 42v13M9 32h13M42 32h13' stroke='%23ff5747' stroke-width='5'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=JetBrains+Mono:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: one serif reading column; figures break out wide; a sticky contents rail on large screens */
+  --bg: #f1f2f0;
+  --surface: #ffffff;
+  --ink: #15181b;
+  --ink-2: #4b5157;
+  --line: #d5d8d9;
+  --accent: #b3241b;
+  --series-2: #2a78d6;
+  --code-bg: #16191c;
+  --code-ink: #e6e4df;
+  --code-dim: #8d949a;
+  --good: #0f7a2e;
+  --bad: #b3241b;
+  --hero-bg: #0e1012;
+  --hero-ink: #efece6;
+  --hero-dim: #9ca3a9;
+  --hero-accent: #ff5747;
+  --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+  --read: 680px;
+  --wide: 1000px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101214;
+    --surface: #181b1e;
+    --ink: #ebe8e3;
+    --ink-2: #a4aaaf;
+    --line: #2c3136;
+    --accent: #ff5b4a;
+    --series-2: #3987e5;
+    --code-bg: #0b0d0e;
+    --code-ink: #e6e4df;
+    --code-dim: #858c92;
+    --good: #3fbf63;
+    --bad: #ff6b5c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101214;
+  --surface: #181b1e;
+  --ink: #ebe8e3;
+  --ink-2: #a4aaaf;
+  --line: #2c3136;
+  --accent: #ff5b4a;
+  --series-2: #3987e5;
+  --code-bg: #0b0d0e;
+  --code-ink: #e6e4df;
+  --code-dim: #858c92;
+  --good: #3fbf63;
+  --bad: #ff6b5c;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 19px; line-height: 1.65; }
+img, video { max-width: 100%; height: auto; display: block; }
+a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+code, kbd { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 0.8em; background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 1px 5px; border-radius: 4px; }
+h1, h2, h3 { text-wrap: balance; }
+
+/* Hero */
+.hero { background: var(--hero-bg); color: var(--hero-ink); padding: 28px 16px 56px; }
+.hero-inner { max-width: 1180px; margin: 0 auto; }
+.masthead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--hero-dim); border-bottom: 1px solid #2a2e33; padding-bottom: 14px; }
+.masthead b { color: var(--hero-ink); font-weight: 600; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; align-items: center; margin-top: 44px; }
+.eyebrow { font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hero-dim); margin: 0 0 18px; }
+.hero h1 { font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: clamp(52px, 7.6vw, 112px); line-height: 0.88; letter-spacing: 0.005em; margin: 0; }
+.hero h1 span { display: block; }
+.hero h1 .acc { color: var(--hero-accent); }
+.h1-sub { font-family: var(--font-display); font-weight: 600; text-transform: uppercase; font-size: clamp(22px, 2.6vw, 32px); letter-spacing: 0.02em; line-height: 1.1; color: var(--hero-ink); margin: 18px 0 0; }
+.dek { font-size: 21px; line-height: 1.5; color: #d4d1cb; margin: 26px 0 0; max-width: 34em; }
+.byline { margin-top: 26px; font-family: var(--font-mono); font-size: 13px; color: var(--hero-dim); line-height: 1.7; }
+.byline strong { color: var(--hero-ink); font-weight: 600; }
+.monitor { margin: 0; }
+.monitor .screen { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid #2f343a; background: #000; aspect-ratio: 4 / 3; }
+.monitor video { width: 100%; height: 100%; object-fit: cover; }
+.tag { position: absolute; left: 12px; top: 12px; font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; background: rgba(10, 11, 12, 0.78); color: var(--hero-ink); padding: 5px 9px; border-radius: 4px; display: flex; gap: 8px; align-items: center; }
+.tag i { width: 7px; height: 7px; border-radius: 50%; background: var(--hero-accent); display: inline-block; }
+.monitor figcaption { font-size: 15px; color: var(--hero-dim); margin-top: 12px; font-style: italic; line-height: 1.5; }
+
+/* Page body */
+.page { max-width: 1180px; margin: 0 auto; padding: 0 16px 80px; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 56px; }
+.rail { position: relative; }
+.toc { position: sticky; top: 24px; margin-top: 56px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5; }
+.toc p { text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-2); margin: 0 0 10px; }
+.toc ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 2px; }
+.toc a { display: grid; grid-template-columns: 26px 1fr; padding: 5px 8px; border-radius: 6px; color: var(--ink-2); text-decoration: none; }
+.toc a span { color: var(--ink-2); opacity: 0.7; }
+.toc a:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.toc a.is-current { color: var(--ink); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.toc a.is-current span { color: var(--accent); opacity: 1; }
+article { min-width: 0; padding-top: 48px; }
+article > *:not(section), section > * { max-width: var(--read); }
+article .wide, article .chart, article .explorer, article .bugs, article .photos, article details.numbers { max-width: var(--wide); }
+article p { margin: 0 0 1.1em; }
+article ul, article ol { padding-left: 1.3em; margin: 0 0 1.2em; }
+article li { margin-bottom: 0.45em; }
+section { margin-top: 72px; scroll-margin-top: 20px; }
+section:first-of-type { margin-top: 32px; }
+.sec-num { display: block; font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.08em; color: var(--accent); margin-bottom: 6px; }
+article h2 { font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: clamp(36px, 4.4vw, 50px); line-height: 0.98; letter-spacing: 0.01em; margin: 0 0 22px; }
+article h3 { font-family: var(--font-body); font-weight: 600; font-size: 23px; line-height: 1.3; margin: 40px 0 12px; }
+.lede { font-size: 22px; line-height: 1.55; }
+
+.callout { border-left: 3px solid var(--accent); background: var(--surface); padding: 20px 24px; border-radius: 0 10px 10px 0; margin: 0 0 28px; }
+.callout .label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); display: block; margin-bottom: 6px; }
+.callout p:last-child { margin-bottom: 0; }
+.tldr { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px 26px 8px; }
+.tldr h2 { font-size: 30px; margin-bottom: 12px; }
+.tldr li { margin-bottom: 0.6em; }
+
+figure { margin: 34px 0; }
+figure img { border-radius: 8px; border: 1px solid var(--line); width: 100%; }
+figcaption { font-size: 15.5px; line-height: 1.5; color: var(--ink-2); margin-top: 10px; font-style: italic; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.pair figure { margin: 0; }
+
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 30px 0; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 16px 14px; }
+.stat b { display: block; font-family: var(--font-display); font-weight: 800; font-size: 44px; line-height: 1; letter-spacing: 0.01em; }
+.stat span { display: block; font-size: 14.5px; line-height: 1.4; color: var(--ink-2); margin-top: 8px; }
+
+.code { margin: 26px 0; background: var(--code-bg); color: var(--code-ink); border-radius: 10px; overflow: hidden; line-height: 1.6; }
+.code-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--code-dim); padding: 9px 14px; border-bottom: 1px solid #262a2e; }
+.code-head button { font-family: var(--font-mono); font-size: 12px; background: transparent; color: var(--code-ink); border: 1px solid #343a40; border-radius: 6px; padding: 3px 10px; cursor: pointer; flex: none; }
+.code-head button:hover { border-color: #5a6168; }
+.code pre { margin: 0; }
+.code pre code { display: block; background: none; padding: 14px 16px 16px; font-size: 13.5px; overflow-x: auto; color: inherit; border-radius: 0; white-space: pre; }
+.c { color: var(--code-dim); }
+.k { color: #ff8f7f; }
+.s { color: #9fd28a; }
+
+.table-wrap { overflow-x: auto; margin: 26px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 15.5px; line-height: 1.45; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.win td { font-weight: 600; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid currentColor; }
+.pill.ok { color: var(--good); }
+.pill.dead { color: var(--bad); }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+.decision { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 18px 22px; margin: 22px 0; }
+.decision .label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.decision h4 { font-family: var(--font-body); font-size: 20px; margin: 4px 0 8px; }
+.decision p { font-size: 17px; margin: 0 0 0.6em; }
+.decision p:last-child { margin: 0; }
+
+.bugs { display: grid; gap: 12px; margin: 26px 0; padding: 0; list-style: none; max-width: var(--wide); }
+.bugs li { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin: 0; }
+.bugs h4 { font-family: var(--font-display); font-weight: 600; font-size: 22px; text-transform: uppercase; line-height: 1.05; margin: 0; }
+.bugs p { font-size: 16.5px; margin: 0 0 0.4em; }
+.bugs p:last-child { margin: 0; }
+.bugs b { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); font-weight: 600; margin-right: 6px; }
+
+.timeline { list-style: none; padding: 0; margin: 26px 0; border-left: 2px solid var(--line); }
+.timeline li { position: relative; padding: 0 0 18px 24px; margin: 0; }
+.timeline li::before { content: ""; position: absolute; left: -7px; top: 9px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 2px solid var(--ink-2); }
+.timeline li.key::before { background: var(--accent); border-color: var(--accent); }
+.timeline time { display: block; font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-2); letter-spacing: 0.03em; }
+.timeline .day { font-family: var(--font-display); font-weight: 800; text-transform: uppercase; font-size: 22px; padding-left: 24px; margin: 6px 0 10px; }
+.timeline .day::before { display: none; }
+
+.photos { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; margin: 30px 0; max-width: var(--wide); }
+.photo-slot { margin: 0; }
+.photo-slot .frame { aspect-ratio: 4 / 3; border: 2px dashed var(--line); border-radius: 10px; display: grid; place-items: center; text-align: center; padding: 16px; color: var(--ink-2); font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0.04em; background: repeating-linear-gradient(135deg, transparent 0 14px, color-mix(in srgb, var(--ink) 3%, transparent) 14px 15px); }
+.photo-slot .frame strong { display: block; font-family: var(--font-display); font-size: 22px; text-transform: uppercase; color: var(--ink); letter-spacing: 0.02em; margin-bottom: 4px; }
+
+/* Charts */
+.chart { overflow-x: auto; position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 18px 10px; margin: 30px 0 12px; max-width: var(--wide); }
+.chart h4 { font-family: var(--font-body); font-size: 18px; font-weight: 600; margin: 0 0 2px; }
+.chart .sub { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+.chart svg { width: 100%; min-width: 620px; height: auto; display: block; overflow: visible; }
+.chart svg text { font-family: var(--font-mono); font-size: 12px; fill: var(--ink-2); }
+.chart svg .lbl { fill: var(--ink); font-size: 12.5px; }
+.chart svg .val { fill: var(--ink); font-weight: 600; }
+.chart .grid line { stroke: var(--line); stroke-width: 1; }
+.chart .hit { fill: transparent; cursor: default; }
+.chart .bar { fill: color-mix(in srgb, var(--ink-2) 55%, var(--surface)); }
+.chart .bar.hi { fill: var(--accent); }
+.chart .hover .bar { filter: brightness(1.12); }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; padding: 7px 10px; border-radius: 6px; white-space: nowrap; opacity: 0; transform: translate(-50%, -100%); transition: opacity 0.12s; z-index: 3; }
+.tip strong { font-size: 13.5px; }
+.tip.show { opacity: 1; }
+details.numbers { max-width: var(--wide); margin: 0 0 28px; font-size: 15px; }
+details.numbers summary { cursor: pointer; font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-2); }
+
+/* Decision explorer */
+.explorer { margin: 30px 0; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.ex-left { background: #000; display: flex; flex-direction: column; }
+.ex-left video { width: 100%; aspect-ratio: 4 / 3; background: #000; }
+.ex-jumps { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 12px; background: var(--hero-bg); }
+.ex-jumps span { font-family: var(--font-mono); font-size: 11.5px; color: var(--hero-dim); align-self: center; margin-right: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+.ex-jumps button { font-family: var(--font-mono); font-size: 12px; color: var(--hero-ink); background: #1d2125; border: 1px solid #343a40; border-radius: 999px; padding: 4px 11px; cursor: pointer; }
+.ex-jumps button:hover { border-color: var(--hero-accent); }
+.ex-panel { padding: 16px 18px 14px; display: flex; flex-direction: column; min-width: 0; }
+.ex-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-2); }
+.ex-head b { font-family: var(--font-display); font-size: 30px; font-weight: 800; color: var(--ink); text-transform: uppercase; letter-spacing: 0.01em; }
+.ex-state { font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: var(--ink-2); margin: 6px 0 10px; min-height: 5.6em; }
+.ex-bars { list-style: none; padding: 0; margin: 0; display: grid; gap: 1px; }
+.ex-bars li { display: grid; grid-template-columns: 112px minmax(0, 1fr) 46px; gap: 10px; align-items: center; font-family: var(--font-mono); font-size: 12px; padding: 3px 6px; border-radius: 5px; margin: 0; cursor: default; }
+.ex-bars li:hover, .ex-bars li:focus-visible { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.ex-bars .track { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--ink) 9%, transparent); position: relative; overflow: hidden; }
+.ex-bars .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: color-mix(in srgb, var(--ink-2) 70%, var(--surface)); }
+.ex-bars .v { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+.ex-bars li.na { color: var(--ink-2); opacity: 0.6; }
+.ex-bars li.chosen { color: var(--ink); font-weight: 600; background: color-mix(in srgb, var(--accent) 11%, transparent); }
+.ex-bars li.chosen .fill { background: var(--accent); }
+.ex-fact { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 15.5px; line-height: 1.5; }
+.ex-fact-label { display: block; font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); margin-bottom: 3px; }
+.ex-fact-text { display: block; }
+.ex-note { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-2); margin-top: auto; padding-top: 10px; }
+
+.diagram { color: var(--ink); overflow-x: auto; }
+.diagram svg { width: 100%; min-width: 760px; height: auto; display: block; }
+.diagram .box { fill: var(--surface); stroke: currentColor; stroke-width: 1.4; }
+.diagram .box.hl { stroke: var(--accent); stroke-width: 2; }
+.diagram text { font-family: var(--font-mono); font-size: 12px; fill: currentColor; }
+.diagram .t { font-weight: 600; font-size: 13px; }
+.diagram .dim { fill: var(--ink-2); }
+.diagram .acc { fill: var(--accent); }
+.diagram .ln { stroke: currentColor; stroke-width: 1.4; fill: none; }
+.diagram .ln.acc-ln { stroke: var(--accent); stroke-width: 2; }
+.diagram .wall { fill: var(--ink-2); }
+.diagram .panel-bg { fill: color-mix(in srgb, var(--ink) 3%, var(--surface)); stroke: var(--line); }
+
+.author { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 18px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; margin-top: 64px; }
+.avatar { width: 64px; height: 64px; border-radius: 50%; background: var(--hero-bg); color: var(--hero-accent); display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 26px; }
+.author p { font-size: 16.5px; margin: 0 0 0.5em; }
+.refs li { font-size: 16.5px; }
+.foot { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-2); margin-top: 40px; }
+
+@media (max-width: 1100px) {
+  .page { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .rail { display: none; }
+  .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .explorer { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  body { font-size: 18px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pair, .photos { grid-template-columns: minmax(0, 1fr); }
+  .bugs li { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .dek { font-size: 19px; }
+  .ex-bars li { grid-template-columns: 96px minmax(0, 1fr) 42px; }
+}
+
+.plain { background: color-mix(in srgb, var(--series-2) 7%, var(--surface)); border: 1px solid color-mix(in srgb, var(--series-2) 28%, var(--line)); border-radius: 10px; padding: 14px 18px; margin: 0 0 24px; }
+.plain .label { display: block; font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--series-2); margin-bottom: 4px; }
+.plain p { margin: 0; font-size: 18px; }
+.tldr h3 { margin-top: 26px; font-size: 20px; }
+figure img[src$=".gif"] { width: auto; max-width: 100%; margin: 0 auto; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="masthead"><span><a href="../" style="color:inherit;text-decoration:none"><b>Adarsh Singh</b> technical notes</a></span><span>Laya · ViZDoom · Freedoom</span></div>
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">A technical write-up · November 2026</p>
+        <h1><span>No pixels.</span><span>No search.</span><span class="acc">No overrides.</span></h1>
+        <p class="h1-sub">Teaching a yes/no model to play real Doom</p>
+        <p class="dek">How I turned the Doom engine into plain sentences, built a 64,248-question dataset from written priorities, and fine-tuned a 421-million-parameter model until it beat the rules that trained it.</p>
+        <p class="byline"><strong>Adarsh Singh</strong> · November 2026 · about 25 minutes to read</p>
+      </div>
+      <figure class="monitor">
+        <div class="screen">
+          <video id="hero-loop" src="media/loop-kills.mp4" poster="media/poster.jpg" muted loop playsinline preload="auto" aria-label="Fourteen seconds of Laya playing Freedoom E1M2: kills nine to twelve"></video>
+          <span class="tag"><i></i>Replay · E1M2 · kills 9 to 12</span>
+        </div>
+        <figcaption>Fourteen seconds of the best game, replayed from its demo recording. Every action in it was Laya's highest yes.</figcaption>
+      </figure>
+    </div>
+  </div>
+</header>
+
+<div class="page">
+  <aside class="rail" aria-label="Contents">
+    <nav class="toc"><p>Contents</p><ol><li><a href="#what-inspired-it"><span>01</span>What inspired it</a></li><li><a href="#laya-explained"><span>02</span>Laya explained</a></li><li><a href="#asking-good-questions"><span>03</span>Asking good questions</a></li><li><a href="#running-real-doom"><span>04</span>Running real Doom</a></li><li><a href="#a-3d-world-as-sentences"><span>05</span>A 3D world as sentences</a></li><li><a href="#one-decision"><span>06</span>One decision</a></li><li><a href="#facts-not-overrides"><span>07</span>Facts, not overrides</a></li><li><a href="#the-dataset"><span>08</span>The dataset</a></li><li><a href="#fine-tuning"><span>09</span>Fine-tuning</a></li><li><a href="#results"><span>10</span>Results</a></li><li><a href="#latency-budget"><span>11</span>Latency budget</a></li><li><a href="#fire-while-retreating"><span>12</span>Fire while retreating</a></li><li><a href="#watch-the-game"><span>13</span>Watch the game</a></li><li><a href="#proof"><span>14</span>Proof</a></li><li><a href="#challenges"><span>15</span>Challenges</a></li><li><a href="#what-is-new"><span>16</span>What is new</a></li><li><a href="#limits"><span>17</span>Limits</a></li><li><a href="#try-it-yourself"><span>18</span>Try it yourself</a></li><li><a href="#credits"><span>19</span>Credits</a></li></ol></nav>
+  </aside>
+  <article>
+<figure class="wide"><img src="media/dash-doom.jpg" alt="Laya deciding step 426 of a real Doom game" loading="lazy"><figcaption>Laya deciding step 426 of a real Doom game. Left: the screen. Right: its yes/no answer for each of the 11 actions. The highest yes is played; here it is Shoot, at 0.829.</figcaption></figure>
+<p>In September I read a Medium post about a small, free decision model that, in its author's words, "can even play Doom(ish)". A month later I had the chance to build my own version on the real Doom engine, with one strict condition: every single action had to be that model's own answer. This post is the full technical story of how I did it: how the game is described to the model, the dataset I built to train it, the mistakes, and the one tactic that took it from dying in under a minute to surviving whole levels.</p>
+<div class="tldr"><h2>In short</h2>
+<ul><li><strong>The model never sees a pixel.</strong> My code reads the Doom engine's internal state and writes one plain sentence per possible action. The model, Laya, answers one yes/no question per action, and the action with the highest "yes" is played.</li><li><strong>No search and no overrides.</strong> No path planner, no lookahead, and no hand-written rule that takes control. When the player got stuck, I fixed what the model reads, not who decides.</li><li><strong>A dataset built from written priorities.</strong> 7,120 decisions and 64,248 labelled yes/no questions from offline games on 17 levels and 8 training scenarios, labelled by a fixed reading of the stated priorities.</li><li><strong>The student beat its teacher.</strong> After 52 minutes of fine-tuning on a free GPU, Laya scored 196 kills on 11 fixed test games, against 51 untrained and 163 for the rules that labelled its data.</li><li><strong>One tactic changed the score:</strong> fire at a close enemy while stepping away from it. Best game: 16 kills on level E1M2, alive after the full 3 minutes, 1,574 of 1,574 actions decided by Laya.</li></ul>
+<h3>Words used in this post</h3>
+<ul><li><strong>Tic:</strong> Doom's clock step. The game runs at 35 tics per second.</li><li><strong>P(yes):</strong> Laya's confidence, from 0 to 1, that the answer to a yes/no question is "yes".</li><li><strong>Forward pass:</strong> one run of the model over its input. Laya answers all its questions in one.</li><li><strong>Label:</strong> the answer a training example says is correct.</li><li><strong>Fine-tuning:</strong> continuing a model's training on your own labelled examples.</li><li><strong>Held-out set:</strong> examples kept aside for testing and never used in training.</li><li><strong>Hash:</strong> a fingerprint of data. Change one byte and the fingerprint changes completely.</li></ul>
+</div>
+<section id="what-inspired-it"><span class="sec-num">01</span><h2>What I read, and what it made me want to try</h2>
+<p>The post was Christian Graham's <a href="https://medium.com/@christian.graham_49279/laya-a-free-local-alternative-to-jev-and-it-can-even-play-doom-ish-42e2292e541e">"Laya: a free, local alternative to Jev, and it can even play Doom(ish)"</a>, published on 18 September 2026. In summary:</p>
+<ul><li>He went looking for a free, open-source alternative to Jev, which had just launched, and found <strong>Laya</strong>. In a published benchmark table he came across, Laya was about ten times faster than Jev and slightly more accurate.</li><li>Laya is <strong>not a large language model</strong>. It has 421 million parameters, scores every option in a single pass and returns a probability for each one, without generating any text. It is open source, runs on his own Mac, and comes from Convai Innovations.</li><li>Its sweet spot is <strong>fast, cheap, calibrated "pick one" decisions</strong>: routing support tickets, flagging risky content with a confidence score, deciding which cases need a human, and classifying data that must stay on-premises.</li><li>He taught it to play Doom because a messy, partly visible game level tests things a benchmark table cannot.</li><li><strong>Shooting:</strong> in his early tests Laya never fired. Asking one focused yes/no question ("should I shoot?") fixed that, with extra checks against firing without ammunition or at enemies out of the line of fire.</li><li><strong>The safety net:</strong> he added rule-based overrides for spinning in corners, oscillating between two moves, and dying without turning to face an enemy. Each override is logged.</li><li><strong>Finding the way out</strong> was still unsolved. The player circled rooms it had already cleared. He measured its turn rate to aim it at unexplored space and added door and wall probing and a wall-following fallback. It explored better but had not found a level's exit.</li></ul>
+<p>Three things in that post stayed with me:</p>
+<ol><li><strong>One focused yes/no question fixed shooting.</strong> What if <em>every</em> action got its own yes/no question, answered side by side?</li><li><strong>The safety net worked, but every override is a decision the model did not make.</strong> Could the failures be fixed in what the model reads instead, so that no override is needed at all?</li><li><strong>Could training make it better?</strong> Could fine-tuning on a dataset built from written priorities make it play well, and could I measure by how much?</li></ol>
+<p>I also wanted the real Doom engine with its real levels, and a way to prove afterwards exactly what was played.</p>
+<p>The chance came a month later. At the Genesis 2.0 hackathon, the problem statement <strong>"Beat the Bot: Teach Laya to Play"</strong>, created by <strong><a href="https://www.linkedin.com/in/shivamrpmishra/">Shivam Mishra</a></strong>, asked for exactly this: a bot in which every move comes from a visible, logged Laya call, with no other AI model, no search and no hidden planner. A rule-based fallback was allowed for at most 10% of moves, and only if logged. The stages were Snake, 2048 and, as the final stage, the real Doom. I built it with my teammates Piyush Shukla, Mayuresh Sarkale and Vidushi Singh. This post covers the method and the Doom stage in depth.</p>
+</section>
+<section id="laya-explained"><span class="sec-num">02</span><h2>Laya, in plain words and in detail</h2>
+<div class="plain"><span class="label">In plain words</span><p>Laya works like a very fast examiner. You show it a situation and a list of yes/no questions, and it answers all of them at once, each with a confidence between 0 and 1. It never writes sentences of its own.</p></div>
+<p>Technically, Laya is built on a ModernBERT-large encoder with 421 million parameters. It is <em>non-autoregressive</em>: it does not produce an answer word by word, as a chat model does. Each question is encoded together with the state, and one forward pass returns a probability for every answer. For a game that shape is ideal: one forward pass per decision, so the cost of a decision is fixed and predictable, and the answer is a set of numbers you can log and inspect. I used version 0.4.6 from PyPI.</p>
+<div class="code"><div class="code-head"><span>python · the whole Laya API this project needs</span><button type="button" data-copy>Copy</button></div><pre><code><span class="k">import</span> laya
+
+router = laya.Router(device=<span class="s">"cuda"</span>)
+model = router.register(<span class="s">"custom"</span>, <span class="s">"data/ftdoom/ckpt_quick_frozen"</span>, description=<span class="s">"Doom fine-tune"</span>)
+
+questions = {
+    <span class="s">"q_shoot"</span>:   {<span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"...This action: fires the pistol at the Imp <span class="k">in</span> the crosshair..."</span>},
+    <span class="s">"q_forward"</span>: {<span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"...This action: moves forward: open <span class="k">for</span> 784 units..."</span>},
+}
+raw = router.predict(state_text, questions, model=model)   <span class="c"># one forward pass for all questions</span>
+p_yes = {q: raw[<span class="s">"answers"</span>][q][<span class="s">"noul"</span>] <span class="k">for</span> q <span class="k">in</span> questions}  <span class="c"># "noul" is Laya's yes/no answer type</span></code></pre></div>
+<p>One rule shaped the whole design: <strong>my code writes facts, never verdicts.</strong> "The shot hits the Imp" is a fact the code can compute exactly. "You should shoot" is a verdict. If verdicts leak into the questions, the model becomes a rubber stamp and the decision is really made by my code. Laya does the weighing; the code only describes the world truthfully.</p>
+</section>
+<section id="asking-good-questions"><span class="sec-num">03</span><h2>Three measured lessons about asking questions</h2>
+<p>Before Doom, the first two stages, Snake and 2048 on the TopGameAI arena, taught me how to ask Laya questions. Each lesson came from a measured comparison:</p>
+<ol><li><strong>One yes/no question per option beats one multiple-choice question</strong> over all options. Each option gets its own probability from its own fact, so you can see exactly why one option won.</li><li><strong>Leave the option's name out of the question.</strong> Removing the direction word raised agreement with the correct move from 0.61 to 0.99. Untrained Laya simply liked the word "right", and the word outweighed the facts.</li><li><strong>Put the priorities in every question.</strong> Adding one line of priorities cut fatal picks from 43 in 200 decisions to zero.</li></ol>
+<p>With those three, untrained Laya scored Snake's maximum of 1,000 points in all four real arena games we completed, with zero fallback moves.</p>
+<figure class="wide"><img src="media/dash-snake.jpg" alt="Snake decision panel" loading="lazy"><figcaption>Snake, step 121 of a 1,000-point game. Each direction gets its own fact and its own P(yes); the highest one is the move.</figcaption></figure>
+<p>2048 taught me <em>when to train</em>. Untrained, Laya reached the 512 tile in none of 14 simulated games. A plain program that applied the stated priorities to the same facts reached it in 75% of games, which proved the facts carried enough information and that Laya's reading was the bottleneck. After fine-tuning on 20,311 labelled positions, Laya reached 512 in 19 of 24 games, and our real arena run reached 512 in 586 moves, first on the public 2048 leaderboard on 17 October 2026.</p>
+<p>The pattern I carried into Doom: <strong>first check that the facts carry the signal, then teach Laya to read them.</strong></p>
+</section>
+<section id="running-real-doom"><span class="sec-num">04</span><h2>Getting the real Doom running</h2>
+<div class="plain"><span class="label">In plain words</span><p>Doom's program code has been free for decades, but its original levels are still sold. I needed a version of the engine that a Python program can control one step at a time, and levels I am allowed to use.</p></div>
+<div class="table-wrap wide" id="tbl-options"><table><thead><tr><th>Option</th><th>What it gives</th><th>Verdict</th></tr></thead><tbody><tr><td>A Doom-like raycaster written in Python</td><td>Full control and easy state</td><td>Not Doom; the problem statement asked for the actual game</td></tr><tr><td>A player source port such as Chocolate Doom or GZDoom</td><td>The real engine, built for human players</td><td>No Python API, no access to monsters or walls, no way to pause per decision</td></tr><tr class="win"><td>ViZDoom</td><td>A ZDoom-based engine with a Python API, per-tic control, state buffers and demo recording</td><td>Chosen</td></tr></tbody></table></div>
+<p><strong>ViZDoom</strong> began as a bachelor thesis by four students at Poznań University of Technology, under the working name "Vizia". In 2016 Michał Kempka, Marek Wydmuch, Grzegorz Runc, Jakub Toczek and Wojciech Jaśkowski published it as <a href="https://arxiv.org/abs/1605.02097">a Doom-based research platform for visual reinforcement learning</a>, which won the best paper award at IEEE CIG 2016 and then hosted the Visual Doom AI Competitions in 2016 and 2017. Today it is maintained by the Farama Foundation under the MIT licence. ViZDoom was designed for agents that learn from pixels; I used it the other way round and read the engine's own state, because Laya reads text.</p>
+<p><strong>Freedoom</strong> is a complete, free replacement for Doom's game data under a BSD licence. Phase 1 matches Doom 1's episode layout (levels E1M1 to E1M9) and Phase 2 matches Doom II (MAP01 onwards). Conveniently, ViZDoom's Python package ships both Freedoom files inside it, so one install gives you a playable Doom:</p>
+<div class="code"><div class="code-head"><span>shell · Windows 11, Python 3.12</span><button type="button" data-copy>Copy</button></div><pre><code>pip install vizdoom          <span class="c"># version 1.3.2; freedoom1.wad and freedoom2.wad are inside the package</span>
+pip install laya==0.4.6 pillow</code></pre></div>
+<div class="code"><div class="code-head"><span>python · the real Doom, level E1M2, controlled from Python</span><button type="button" data-copy>Copy</button></div><pre><code><span class="k">import</span> os, vizdoom <span class="k">as</span> vzd
+
+g = vzd.DoomGame()
+g.load_config(os.path.join(vzd.scenarios_path, <span class="s">"freedoom1.cfg"</span>))
+g.set_doom_game_path(os.path.join(os.path.dirname(vzd.__file__), <span class="s">"freedoom1.wad"</span>))
+g.set_doom_map(<span class="s">"E1M2"</span>)
+g.add_game_args(<span class="s">"+neverswitchonpickup 1"</span>)   <span class="c"># keep the pistol when a chainsaw is picked up</span>
+g.set_labels_buffer_enabled(<span class="k">True</span>)               <span class="c"># which pixels belong to which monster</span>
+g.set_objects_info_enabled(<span class="k">True</span>)                <span class="c"># every object with its position</span>
+g.set_sectors_info_enabled(<span class="k">True</span>)                <span class="c"># the level's walls, doors and floors</span>
+g.set_mode(vzd.Mode.PLAYER)                      <span class="c"># the engine waits for each decision</span>
+g.init()
+g.new_episode(<span class="s">"run.lmp"</span>)                       <span class="c"># record a demo of the whole episode</span></code></pre></div>
+<p>Two ViZDoom features shaped the rest of the design. It runs either in <code>PLAYER</code> mode, where the engine waits for each action, or in <code>ASYNC_PLAYER</code> mode, where the game keeps running at 35 tics per second whatever the agent does. And it records each episode as a <code>.lmp</code> demo file that the engine can replay tic for tic, which later became the proof of every game.</p>
+</section>
+<section id="a-3d-world-as-sentences"><span class="sec-num">05</span><h2>Turning a 3D world into sentences</h2>
+<div class="plain"><span class="label">In plain words</span><p>Laya cannot see the screen, so my code describes it in words: where each monster is, what is in the crosshair, and how far you can walk in each direction.</p></div>
+<p>A module I call the <em>perceiver</em> turns each engine state into what a careful player would say out loud. It builds four things:</p>
+<ol><li><strong>Level geometry</strong> from the sectors: walls, doors and ledges. A step up blocks movement only if it is more than 24 units higher, as in the real game.</li><li><strong>Straight-line rays</strong> for every movement: how far you get before something stops you, and whether the ground along the way is new or already explored.</li><li><strong>Enemies</strong> from the object list and the labels buffer: name, angle, distance, and whether they are in view. An enemy counts as "in the crosshair" only if its label covers the centre of the screen and the angle falls within its collision radius.</li><li><strong>Memory of the player's own play:</strong> the ground already explored, the last action, the doors already pressed, and the moves that just stalled against a wall.</li></ol>
+<p>Laya chooses among <strong>11 actions</strong>: shoot; turn 5° or 30° left or right; turn around; move forward or back; step left or right; and use (open a door). Every decision becomes one state line plus one fact per action. This is decision 426 of my best game, word for word:</p>
+<div class="code"><div class="code-head"><span>state, as Laya received it</span><button type="button" data-copy>Copy</button></div><pre><code>Doom. Health 92, armor 0, pistol with 54 rounds, 8 kills. Enemies in view: Imp straight ahead,
+811 units; shotgun guy straight ahead, 601 units; Zombieman 4 degrees right, 542 units.
+A doom imp ball is flying at you, 703 units away.</code></pre></div>
+<div class="code"><div class="code-head"><span>three of the eleven questions, with Laya&#x27;s P(yes)</span><button type="button" data-copy>Copy</button></div><pre><code>Doom priorities: shoot an enemy that is in the crosshair, turn to bring the nearest enemy into the
+crosshair, dodge incoming fireballs, never waste ammunition, open doors, explore new areas, pick up
+health when hurt. Is this a good action now? This action:
+
+shoot      0.818  fires the pistol at the Imp in the crosshair, 811 units away: the shot hits it,
+                  and you back away from the shotgun guy 107 units away as you fire. 54 rounds left.
+forward    0.086  moves forward: open for 784 units, into 4 unexplored areas, closer to the Imp ...
+turn_left  0.023  turns left 5 degrees: the Imp now in the crosshair moves out of it, 6 degrees off.</code></pre></div>
+<p>Nothing in those sentences says "shoot is best". Each sentence states what that action does right now, and Laya decides whether that is good. No sentence looks more than one action ahead, so there is no search hidden inside the facts.</p>
+</section>
+<section id="one-decision"><span class="sec-num">06</span><h2>One decision, end to end</h2>
+<figure class="diagram wide" id="diagram-decision"><svg viewBox="0 0 980 300" role="img" aria-label="One decision: the engine state becomes facts, eleven yes/no questions go to Laya in one pass, the highest yes is logged first and then played for four tics">
+          <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
+          <rect class="box" x="10" y="40" width="150" height="76" rx="8"/>
+          <text class="t" x="85" y="70" text-anchor="middle">ViZDoom</text>
+          <text class="dim" x="85" y="90" text-anchor="middle">objects, labels,</text>
+          <text class="dim" x="85" y="106" text-anchor="middle">sectors, health</text>
+          <rect class="box" x="210" y="40" width="160" height="76" rx="8"/>
+          <text class="t" x="290" y="70" text-anchor="middle">Perceiver</text>
+          <text class="dim" x="290" y="90" text-anchor="middle">geometry, rays,</text>
+          <text class="dim" x="290" y="106" text-anchor="middle">enemies, memory</text>
+          <rect class="box" x="420" y="40" width="160" height="76" rx="8"/>
+          <text class="t" x="500" y="70" text-anchor="middle">11 facts</text>
+          <text class="dim" x="500" y="90" text-anchor="middle">one sentence</text>
+          <text class="dim" x="500" y="106" text-anchor="middle">per action</text>
+          <rect class="box hl" x="630" y="40" width="160" height="76" rx="8"/>
+          <text class="t acc" x="710" y="70" text-anchor="middle">Laya</text>
+          <text class="dim" x="710" y="90" text-anchor="middle">11 yes/no questions,</text>
+          <text class="dim" x="710" y="106" text-anchor="middle">one forward pass</text>
+          <rect class="box" x="840" y="40" width="130" height="76" rx="8"/>
+          <text class="t" x="905" y="70" text-anchor="middle">Highest yes</text>
+          <text class="dim" x="905" y="90" text-anchor="middle">e.g. shoot</text>
+          <text class="dim" x="905" y="106" text-anchor="middle">P(yes) 0.818</text>
+          <line class="ln" x1="160" y1="78" x2="206" y2="78" marker-end="url(#ar)"/>
+          <text class="dim" x="183" y="70" text-anchor="middle">state</text>
+          <line class="ln" x1="370" y1="78" x2="416" y2="78" marker-end="url(#ar)"/>
+          <line class="ln acc-ln" x1="580" y1="78" x2="626" y2="78" marker-end="url(#ar)"/>
+          <line class="ln" x1="790" y1="78" x2="836" y2="78" marker-end="url(#ar)"/>
+          <text class="dim" x="813" y="70" text-anchor="middle">P(yes)</text>
+          <rect class="box" x="760" y="190" width="210" height="76" rx="8"/>
+          <text class="t" x="865" y="220" text-anchor="middle">Log line, fsync</text>
+          <text class="dim" x="865" y="240" text-anchor="middle">hash = sha256(prev | line)</text>
+          <text class="dim" x="865" y="256" text-anchor="middle">written before acting</text>
+          <rect class="box" x="420" y="190" width="250" height="76" rx="8"/>
+          <text class="t" x="545" y="220" text-anchor="middle">Engine plays the action</text>
+          <text class="dim" x="545" y="240" text-anchor="middle">held for 4 tics (0.11 s game time)</text>
+          <text class="dim" x="545" y="256" text-anchor="middle">every tic lands in the .lmp demo</text>
+          <line class="ln" x1="905" y1="116" x2="905" y2="186" marker-end="url(#ar)"/>
+          <text class="dim" x="914" y="156">1. log</text>
+          <line class="ln" x1="760" y1="228" x2="674" y2="228" marker-end="url(#ar)"/>
+          <text class="dim" x="717" y="220" text-anchor="middle">2. act</text>
+          <path class="ln" d="M420 228 H85 V120" marker-end="url(#ar)"/>
+          <text class="dim" x="250" y="220" text-anchor="middle">next state, 4 tics later</text>
+        </svg><figcaption>Every decision follows this loop. Laya answers all eleven questions in one forward pass, the highest yes is written to a hash-chained log, and only then does the engine play it for 4 tics.</figcaption></figure>
+<p>Two details are deliberate. The decision is <strong>logged before it is played</strong>, so a crash can never leave an action without its record. And the highest P(yes) is played exactly as Laya gave it: there is no rule that overrides Laya in Doom, so every logged decision carries the source <code>laya</code>. On a laptop RTX 3050 with 6 GB of memory, one call with up to 11 questions took a median of 190 ms in my best game.</p>
+</section>
+<section id="facts-not-overrides"><span class="sec-num">07</span><h2>Replacing overrides with facts</h2>
+<div class="plain"><span class="label">In plain words</span><p>when the player got stuck, I did not add a rule that grabs the controls. I added the missing piece of information, so that Laya could see why it was stuck and choose differently.</p></div>
+<p>This is where my approach differs most from a safety net. Each failure I saw in testing was fixed by adding a fact, never by taking a decision away from Laya:</p>
+<div class="table-wrap" id="tbl-overrides"><table><thead><tr><th>Failure seen in testing</th><th>The fact that fixed it</th></tr></thead><tbody><tr><td>Ping-pong: forward, back, forward, back</td><td>The move that undoes the last one says "back where you just came from"</td></tr><tr><td>Pushing against a wall</td><td>A blocked move says "blocked by a wall 20 units away, so you barely move", and the state line says when the player has barely moved for several actions</td></tr><tr><td>Waiting at a door, or pressing it again and again</td><td>The door remembers being pressed: "walks up to the door ahead, which is opening and will be clear in a moment"</td></tr><tr><td>Circling rooms already cleared</td><td>Each move says "into 4 unexplored areas" or "over ground already explored", and when no enemy is in view a 12-direction scan adds "Most unexplored ground: 60 degrees right"</td></tr><tr><td>Aim swinging past the target</td><td>Turns split into 5° for aiming and 30° for looking around, and each says where the enemy ends up: "from 3 to 2 degrees off"</td></tr><tr><td>Firing at nothing</td><td>The shot says "hits nothing and wastes a round"</td></tr></tbody></table></div>
+<p>The result: zero overrides. In my best game, 1,574 of 1,574 decisions were Laya's own answer. One problem from Christian's post is still open for me too: my player explores and fights well but has never reached a level's exit, because exit switches need their own facts.</p>
+</section>
+<section id="the-dataset"><span class="sec-num">08</span><h2>Building the dataset</h2>
+<div class="plain"><span class="label">In plain words</span><p>to teach Laya, I recorded thousands of game situations, wrote down for each one which action my stated priorities prefer, and trained Laya on those examples until its answers matched.</p></div>
+<p>Untrained Laya was close to useless at Doom. On a fixed set of 11 test games it scored 51 kills, barely more than random actions (34), and on held-out questions it agreed with the stated priorities only 59% of the time. It fired at empty walls and strafed into blocked corners. The facts were correct; the reading was wrong. As with 2048, the cure was to teach it to read.</p>
+<figure class="diagram wide" id="diagram-dataset"><svg viewBox="0 0 980 320" role="img" aria-label="Offline games on 25 levels and scenarios produce decision records; each is labelled by the rule reader; the data is split by game into 7,120 training and 1,267 held-out decisions; fine-tuning on a Kaggle T4 produces one checkpoint, tested on 11 fixed games; a second round adds states the fine-tuned model reaches">
+  <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
+  <rect class="box" x="10" y="40" width="210" height="84" rx="8"/>
+  <text class="t" x="115" y="70" text-anchor="middle">Offline games</text>
+  <text class="dim" x="115" y="90" text-anchor="middle">17 levels, 8 scenarios</text>
+  <text class="dim" x="115" y="108" text-anchor="middle">rule reader + random bursts</text>
+  <rect class="box" x="255" y="40" width="210" height="84" rx="8"/>
+  <text class="t" x="360" y="70" text-anchor="middle">Decision records</text>
+  <text class="dim" x="360" y="90" text-anchor="middle">state + 11 facts each</text>
+  <text class="dim" x="360" y="108" text-anchor="middle">8,387 decisions</text>
+  <rect class="box" x="500" y="40" width="210" height="84" rx="8"/>
+  <text class="t" x="605" y="70" text-anchor="middle">Labels</text>
+  <text class="dim" x="605" y="90" text-anchor="middle">top-scoring action = yes</text>
+  <text class="dim" x="605" y="108" text-anchor="middle">every other action = no</text>
+  <rect class="box" x="745" y="40" width="225" height="84" rx="8"/>
+  <text class="t" x="857" y="70" text-anchor="middle">Split by game</text>
+  <text class="dim" x="857" y="90" text-anchor="middle">7,120 to train</text>
+  <text class="dim" x="857" y="108" text-anchor="middle">1,267 held out</text>
+  <rect class="box hl" x="745" y="206" width="225" height="84" rx="8"/>
+  <text class="t acc" x="857" y="236" text-anchor="middle">Fine-tune</text>
+  <text class="dim" x="857" y="256" text-anchor="middle">laya.train on a Kaggle T4</text>
+  <text class="dim" x="857" y="274" text-anchor="middle">52 min, agreement 0.961</text>
+  <rect class="box" x="500" y="206" width="210" height="84" rx="8"/>
+  <text class="t" x="605" y="236" text-anchor="middle">One checkpoint</text>
+  <text class="dim" x="605" y="256" text-anchor="middle">plays every level</text>
+  <text class="dim" x="605" y="274" text-anchor="middle">and scenario</text>
+  <rect class="box" x="255" y="206" width="210" height="84" rx="8"/>
+  <text class="t" x="360" y="236" text-anchor="middle">11 fixed test games</text>
+  <text class="dim" x="360" y="256" text-anchor="middle">196 kills</text>
+  <text class="dim" x="360" y="274" text-anchor="middle">0% fallback</text>
+  <line class="ln" x1="220" y1="82" x2="251" y2="82" marker-end="url(#ar3)"/>
+  <line class="ln" x1="465" y1="82" x2="496" y2="82" marker-end="url(#ar3)"/>
+  <line class="ln" x1="710" y1="82" x2="741" y2="82" marker-end="url(#ar3)"/>
+  <line class="ln acc-ln" x1="857" y1="124" x2="857" y2="202" marker-end="url(#ar3)"/>
+  <line class="ln" x1="745" y1="248" x2="714" y2="248" marker-end="url(#ar3)"/>
+  <line class="ln" x1="500" y1="248" x2="469" y2="248" marker-end="url(#ar3)"/>
+  <path class="ln" d="M560 206 V165 H115 V128" stroke-dasharray="5 5" marker-end="url(#ar3)"/>
+  <text class="dim" x="330" y="158" text-anchor="middle">round two: states the fine-tuned model reaches (9,000 rows)</text>
+</svg><figcaption>How the training data was made: offline games, labels from a fixed reading of the priorities, a split by game, fine-tuning on a free GPU, and evaluation on 11 fixed games.</figcaption></figure>
+<h3>Who writes the labels</h3>
+<p>The labels come from a <strong>rule reader</strong>: a fixed priority reading of the very same one-step facts. It reads one action at a time and never searches for a path or looks ahead. Each action gets a score:</p>
+<div class="table-wrap" id="tbl-priorities"><table><thead><tr><th>Situation</th><th>Score</th></tr></thead><tbody><tr><td>A side-step takes you out of an incoming fireball's path</td><td>95</td></tr><tr><td>The shot hits the enemy in the crosshair</td><td>90</td></tr><tr><td>A turn puts the nearest enemy in the crosshair (or closer to it)</td><td>80 (70)</td></tr><tr><td>Use opens the door in reach; wait for a door that is opening</td><td>60, 58</td></tr><tr><td>Pick up health when hurt; other items when no enemy is in view</td><td>55, 50</td></tr><tr><td>Exploring: forward into new ground, then turns toward new ground</td><td>40 and up</td></tr><tr><td>Undoing the last action; firing at nothing</td><td>3; 0</td></tr></tbody></table></div>
+<p>For each decision, the action or actions with the top score are labelled <strong>yes</strong> and every other action <strong>no</strong>. Decisions where every action scores the same are skipped, because there is nothing to learn from them.</p>
+<h3>Which games the data comes from</h3>
+<p>I wanted a model that reads situations, not one that memorises a level, so the data spans as many places as possible. Every game lasted four minutes of game time:</p>
+<div class="table-wrap" id="tbl-sources"><table><thead><tr><th>Source</th><th>Games</th></tr></thead><tbody><tr><td>Freedoom Phase 1, levels E1M1 to E1M9</td><td>2 each, difficulty rotating from 2 to 4</td></tr><tr><td>Freedoom Phase 2, levels MAP01 to MAP08</td><td>1 each</td></tr><tr><td>ViZDoom scenarios: defend the center, defend the line, deadly corridor, deathmatch, basic, my way home, health gathering, take cover</td><td>2 to 8 each, 39 in total</td></tr></tbody></table></div>
+<p>The rule reader played these games itself, with random actions mixed in: at each step there was a 15% chance of starting a short burst of them. Without that noise, the data would only contain the tidy situations the reader steers into; with it, the data also contains recoveries from bad spots. The training and held-out sets never share a game.</p>
+<div class="stats"><div class="stat"><b>7,120</b><span>training decisions</span></div><div class="stat"><b>64,248</b><span>labelled yes/no questions</span></div><div class="stat"><b>1,267</b><span>held-out decisions from separate games</span></div><div class="stat"><b>25</b><span>levels and scenarios</span></div></div>
+<div class="code"><div class="code-head"><span>one training row, shortened (data/ftdoom/train.jsonl)</span><button type="button" data-copy>Copy</button></div><pre><code>{<span class="s">"state"</span>: <span class="s">"Doom. Health 89, armor 0, pistol with 107 rounds, 16 kills. Enemies in view: none."</span>,
+ <span class="s">"questions"</span>: {
+   <span class="s">"q_shoot"</span>:   {<span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: "Doom priorities: ... This action: fires the pistol with no enemy
+                in the crosshair: the shot hits nothing and wastes a round. 107 rounds left."},
+   <span class="s">"q_forward"</span>: {<span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"Doom priorities: ... This action: moves forward: ..."</span>},
+   ... nine more ... },
+ <span class="s">"expected"</span>: {<span class="s">"q_shoot"</span>: false, <span class="s">"q_forward"</span>: true, ... }}</code></pre></div>
+<p>A second round added the situations Laya itself walks into. I let the first fine-tuned model play, labelled its states with the same reader, and merged them into a 9,000-row set. A model trained only on its teacher's games never sees its own mistakes; round two shows it some.</p>
+<h3>Why one model works on every level</h3>
+<p>No fact mentions a level. Walls, doors, angles, distances, enemy names and ammunition read the same on E1M2 as in a combat arena. That, plus data from 25 different levels and scenarios, is why a single checkpoint plays every level and scenario I tried. The test games used different random seeds from the training games, although some test levels also appear in the training data with other seeds.</p>
+</section>
+<section id="fine-tuning"><span class="sec-num">09</span><h2>Fine-tuning on a free GPU</h2>
+<div class="plain"><span class="label">In plain words</span><p>fine-tuning means showing the model the labelled examples again and again, nudging it each time its answer differs from the label, until its answers match.</p></div>
+<p>Training used Laya's own trainer, <code>laya.train.finetune</code>, on Kaggle's free T4 GPUs, so the laptop stayed free for testing:</p>
+<div class="code"><div class="code-head"><span>python · notebooks/kaggle_finetune_doom.py</span><button type="button" data-copy>Copy</button></div><pre><code><span class="k">from</span> laya.train <span class="k">import</span> TrainConfig, finetune
+
+cfg = TrainConfig(
+    epochs=EPOCHS,
+    micro_batch=16,
+    grad_accum=4,          <span class="c"># an effective batch of 64 examples</span>
+    loss=<span class="s">"soft-ce"</span>,
+    label_smoothing=0.05,
+    max_len=256,
+    ...
+)</code></pre></div>
+<div class="table-wrap wide" id="tbl-runs"><table><thead><tr><th>Run</th><th class="num">Rows</th><th class="num">Epochs</th><th class="num">Time</th><th class="num">Held-out agreement</th></tr></thead><tbody><tr><td>Untrained Laya</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0.587</td></tr><tr class="win"><td>Quick (used)</td><td class="num">3,000</td><td class="num">2</td><td class="num">52 min</td><td class="num">0.961</td></tr><tr><td>Full</td><td class="num">7,120</td><td class="num">3</td><td class="num">185 min</td><td class="num">0.953</td></tr><tr><td>Round two</td><td class="num">9,000</td><td class="num">2</td><td class="num">151 min</td><td class="num">0.963</td></tr></tbody></table></div>
+<p><em>Agreement</em> is the share of held-out yes/no questions where Laya's answer matches the label. The quick model's probabilities were also well calibrated, with an expected calibration error of 0.028: when it said 0.9, it was right about 90% of the time.</p>
+<p>One moment from testing shows what training changed. The player was stuck in a corner. Untrained Laya gave the blocked side-step a P(yes) of 0.575 and a shot at nothing 0.538. The quick model gives both 0.024 and walks out through the open way.</p>
+<p>I used the quick model although the bigger runs matched it on agreement, because it won where it counts. On the same 11 test games it scored 196 kills, against 162 for the full run and 178 for round two.</p>
+</section>
+<section id="results"><span class="sec-num">10</span><h2>Results on 11 fixed games</h2>
+<p>Every policy played the same 11 games: three of <em>defend the center</em>, two of <em>defend the line</em>, three of <em>deadly corridor</em>, and one each of levels E1M1, E1M2 and MAP01.</p>
+<div class="chart" id="chart-kills"><h4>Total kills over the same 11 games</h4><p class="sub">Fine-tuned Laya beats the rule reader that wrote its training labels.</p><svg viewBox="0 0 900 220" role="img" aria-label="Total kills: random actions 34, untrained Laya 51, rule reader 163, fine-tuned Laya 196"></svg><div class="tip" role="status"></div></div>
+<div class="table-wrap wide" id="tbl-results"><table><thead><tr><th>Policy</th><th class="num">Total kills</th><th>Deadly corridor cleared</th><th class="num">Deaths</th></tr></thead><tbody><tr><td>Random actions</td><td class="num">34</td><td>0 of 3</td><td class="num">10</td></tr><tr><td>Untrained Laya</td><td class="num">51</td><td>0 of 3</td><td class="num">9</td></tr><tr><td>Rule reader (writes the labels)</td><td class="num">163</td><td>2 of 3</td><td class="num">9</td></tr><tr class="win"><td>Fine-tuned Laya, quick model</td><td class="num">196</td><td>3 of 3</td><td class="num">6</td></tr></tbody></table></div>
+<p>The last row matters most. The student beat its teacher: more kills, more corridors cleared and fewer deaths than the rules that labelled its data, with 0% fallback, so every action was Laya's own. A model that only copied the reader could not score higher than it. (Random and untrained were measured on 16 October; the reader and the fine-tuned model were measured again on 17 October with the final code.)</p>
+</section>
+<section id="latency-budget"><span class="sec-num">11</span><h2>Real time or turn-based: the latency budget</h2>
+<div class="plain"><span class="label">In plain words</span><p>real Doom runs at 35 steps a second. If the model needs a fifth of a second to decide, the monsters get several free steps before every move.</p></div>
+<p>Doom runs at 35 tics per second, so one tic lasts about 28.6 ms. In real-time mode the game never waits. With the GPU shared, each Laya call took about 230 ms, which is 8 tics; with the engine and logging on top, the log shows Laya acting only every 8 to 12 tics. A 5° turn three times a second cannot track a monster that moves every tic.</p>
+<p>The numbers were clear. In real time, the quick model scored 2 kills on E1M1 and died at 55 seconds. On the same level in <code>PLAYER</code> mode, where the engine waits for each decision, it scored 12 kills and was still alive at the end of a 90-second check. I made every scored game turn-based, which is also how every test number in this post was measured, and kept real time as an option (<code>--realtime</code>). Making real time competitive means bringing a decision within a few tics: fewer questions per decision, a quantised model, or a faster GPU.</p>
+</section>
+<section id="fire-while-retreating"><span class="sec-num">12</span><h2>Fire while retreating: the tactic that changed the score</h2>
+<div class="plain"><span class="label">In plain words</span><p>a Demon needs about 15 pistol shots to go down, and it bites at close range. Standing still to shoot it is how you die. Stepping back while shooting keeps it out of reach.</p></div>
+<p>The real-time death on E1M1 taught a second lesson. A Demon got within 50 units. Laya spent eight decisions in a row turning 30° at a time, then fired four pistol shots while the Demon kept biting. In those last decisions one fact sat unused: "moves backward: ... away from the Demon (52 to 90 units)".</p>
+<p>The arithmetic explains it. A Demon has <strong>150 hit points</strong>. A pistol bullet does 5, 10 or 15 damage, 10 on average, so a Demon takes <strong>about 15 hits</strong>: 10 with lucky rolls, 30 with unlucky ones. Watching that death in the log, I asked the obvious question: why not move back and shoot at the same time, and if a wall is in the way, step aside instead? Doom allows exactly that, holding the fire key and a movement key in the same tic, and a running player backs away about three times faster than a Demon closes in.</p>
+<figure class="diagram wide" id="diagram-backoff"><svg viewBox="0 0 980 270" role="img" aria-label="Two cases: with open ground behind, the shot fires while backing straight away; with a wall behind, it fires while side-stepping toward the side with no other enemy">
+          <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
+          <rect class="panel-bg" x="10" y="10" width="470" height="250" rx="10"/>
+          <text class="t" x="30" y="38">Open ground behind: fire and back away</text>
+          <circle cx="245" cy="160" r="13" fill="var(--accent)"/>
+          <text x="245" y="194" text-anchor="middle">you</text>
+          <circle cx="245" cy="78" r="16" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <text x="275" y="82">Demon, 60 units</text>
+          <line class="ln acc-ln" x1="245" y1="145" x2="245" y2="98" stroke-dasharray="4 4"/>
+          <text class="acc" x="200" y="124" text-anchor="end">shot hits</text>
+          <line class="ln" x1="245" y1="178" x2="245" y2="238" marker-end="url(#ar2)"/>
+          <text class="dim" x="258" y="226">backward, while firing</text>
+          <rect class="panel-bg" x="500" y="10" width="470" height="250" rx="10"/>
+          <text class="t" x="520" y="38">Wall behind: fire and side-step</text>
+          <rect class="wall" x="560" y="214" width="340" height="12" rx="2"/>
+          <text class="dim" x="570" y="246">wall 20 units behind</text>
+          <circle cx="735" cy="180" r="13" fill="var(--accent)"/>
+          <circle cx="735" cy="90" r="16" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <text x="765" y="94">Demon</text>
+          <line class="ln acc-ln" x1="735" y1="165" x2="735" y2="110" stroke-dasharray="4 4"/>
+          <circle cx="585" cy="150" r="12" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <text x="585" y="128" text-anchor="middle">Imp</text>
+          <line class="ln" x1="720" y1="180" x2="632" y2="180" stroke-dasharray="3 5"/>
+          <text class="dim" x="676" y="203" text-anchor="middle">not this way</text>
+          <line class="ln" x1="750" y1="180" x2="850" y2="180" marker-end="url(#ar2)"/>
+          <text class="dim" x="800" y="170" text-anchor="middle">step right</text>
+        </svg><figcaption>With open ground behind, the shot fires while backing straight away. With a wall behind, it side-steps toward open ground that holds no other enemy. A side-step keeps the crosshair on the target; a turn would not.</figcaption></figure>
+<p>I built it into the shoot action itself. When any enemy is within 160 units, a shot also steps away from the closest one: straight back if that leads away from it, otherwise sideways onto open ground with no other enemy within 60° of that direction. The shoot fact says which, so Laya reads it, and Laya still decides whether to shoot at all.</p>
+<div class="code"><div class="code-head"><span>python · src/laya_agent/doom/facts.py</span><button type="button" data-copy>Copy</button></div><pre><code><span class="k">def</span> _step_away(s: Scene):
+    near = [o <span class="k">for</span> o <span class="k">in</span> s.enemies <span class="k">if</span> o.dist &lt; CLOSE]          <span class="c"># CLOSE = 160 units</span>
+    <span class="k">if</span> <span class="k">not</span> near:
+        <span class="k">return</span> <span class="k">None</span>
+    c = min(near, key=<span class="k">lambda</span> o: o.dist)                      <span class="c"># the closest enemy, in view or not</span>
+
+    <span class="k">def</span> off(act, o):   <span class="c"># degrees between this move's direction and the enemy (180 = straight away)</span>
+        <span class="k">return</span> abs((o.bearing - SIDE_ANGLE[act] + 540.0) % 360.0 - 180.0)
+
+    <span class="k">def</span> clear(act):
+        <span class="k">return</span> (s.rays[act].dist &gt;= BLOCKED * 2 <span class="k">and</span> off(act, c) &gt;= 90.0
+                <span class="k">and</span> <span class="k">not</span> any(o <span class="k">is</span> <span class="k">not</span> c <span class="k">and</span> o.dist &lt; 300 <span class="k">and</span> off(act, o) &lt; 60.0 <span class="k">for</span> o <span class="k">in</span> s.enemies))
+
+    moves = [a <span class="k">for</span> a <span class="k">in</span> (<span class="s">"backward"</span>, <span class="s">"strafe_left"</span>, <span class="s">"strafe_right"</span>) <span class="k">if</span> clear(a)]
+    <span class="k">return</span> max(moves, key=<span class="k">lambda</span> a: (a == <span class="s">"backward"</span>, off(a, c), s.rays[a].dist)) <span class="k">if</span> moves else <span class="k">None</span></code></pre></div>
+<p>The first version stepped away only from the enemy in the crosshair, and on E1M2 that got the player killed: Laya shot an Imp 724 units away while a second Imp clawed it from 54 units, 52° to the left. Stepping away from the <em>closest</em> enemy fixed it. The same game with the same seed went from 11 kills and dead at 53 seconds to <strong>16 kills and alive at the end</strong>.</p>
+<div class="table-wrap wide" id="tbl-backoff"><table><thead><tr><th>Setup (quick model, turn-based unless stated)</th><th>Level, seed</th><th class="num">Kills</th><th>How it ended</th></tr></thead><tbody><tr><td>Real time</td><td>E1M1, 0</td><td class="num">2</td><td>died at 55 s</td></tr><tr><td>Turn-based, 90-second check</td><td>E1M1, 0</td><td class="num">12</td><td>alive</td></tr><tr><td>Before the back-off (test suite)</td><td>E1M1, 11</td><td class="num">8</td><td>died</td></tr><tr><td>With back-off</td><td>E1M1, 0</td><td class="num">8</td><td>alive at 3:00</td></tr><tr><td>Back-off from the aimed enemy only</td><td>E1M2, 0</td><td class="num">11</td><td>died at 53 s</td></tr><tr class="win"><td>Back-off from the closest enemy</td><td>E1M2, 0</td><td class="num">16</td><td>alive at 3:00</td></tr></tbody></table></div>
+<figure><img src="media/backoff-imp.gif" alt="Firing while backing away from an Imp" loading="lazy"><figcaption>Steps 505 to 510 of the best game: an Imp 50 units away. Each shot also backs the player away from it, and kills 11 and 12 follow within two seconds.</figcaption></figure>
+<p>The rule reader improved with it as well: E1M1 went from 8 kills and dead to 12 kills and alive, and one <em>defend the line</em> game from 24 kills to 49. For accuracy: this changed the action layer, not Laya's weights. The dataset builder already plays the back-off, so the next training round will include it.</p>
+</section>
+<section id="watch-the-game"><span class="sec-num">13</span><h2>Watch the full game</h2>
+<p>This is the 16-kill game on level E1M2, replayed from its own demo recording at real speed, 35 tics per second. Every frame is the engine's replay of what Laya played.</p>
+<figure class="explorer wide" id="explorer">
+        <div class="ex-left">
+          <video id="game" src="media/e1m2-16-kills.mp4" poster="media/poster.jpg" controls preload="metadata" playsinline aria-label="Full replay of Laya's 16-kill game on Freedoom E1M2, three minutes"></video>
+          <div class="ex-jumps" aria-label="Jump to a moment">
+            <span>Jump to</span>
+            <button type="button" data-t="1.6">First kill</button>
+            <button type="button" data-t="21.0">Backing off a Zombieman</button>
+            <button type="button" data-t="48.5">Fireball incoming</button>
+            <button type="button" data-t="57.4">Imp at 50 units</button>
+            <button type="button" data-t="160.2">Last kill</button>
+          </div>
+        </div>
+        <div class="ex-panel">
+          <div class="ex-head"><b id="ex-step">Step 463</b><span id="ex-time">53.0 s · 218 ms</span></div>
+          <p class="ex-state" id="ex-state">Health 68, armor 0, pistol with 43 rounds, 8 kills. Enemies in view: Imp straight ahead, 987 units; Imp 5 degrees left, 501 units; shotgun guy 6 degrees left, 621 units.</p>
+          <ol class="ex-bars" id="ex-bars">
+            <li><span>Shoot</span><span class="track"><span class="fill" style="width:2.3%"></span></span><span class="v">0.023</span></li>
+            <li class="chosen"><span>Turn left 5°</span><span class="track"><span class="fill" style="width:85.4%"></span></span><span class="v">0.854</span></li>
+            <li><span>Turn right 5°</span><span class="track"><span class="fill" style="width:2.4%"></span></span><span class="v">0.024</span></li>
+            <li><span>Turn left 30°</span><span class="track"><span class="fill" style="width:2.8%"></span></span><span class="v">0.028</span></li>
+            <li><span>Turn right 30°</span><span class="track"><span class="fill" style="width:2.5%"></span></span><span class="v">0.025</span></li>
+            <li class="na"><span>Turn around</span><span class="track"></span><span class="v">n/a</span></li>
+            <li><span>Forward</span><span class="track"><span class="fill" style="width:18.5%"></span></span><span class="v">0.185</span></li>
+            <li><span>Back</span><span class="track"><span class="fill" style="width:2.5%"></span></span><span class="v">0.025</span></li>
+            <li><span>Step left</span><span class="track"><span class="fill" style="width:2.4%"></span></span><span class="v">0.024</span></li>
+            <li><span>Step right</span><span class="track"><span class="fill" style="width:2.4%"></span></span><span class="v">0.024</span></li>
+            <li class="na"><span>Use</span><span class="track"></span><span class="v">n/a</span></li>
+          </ol>
+          <p class="ex-fact"><span class="ex-fact-label" id="ex-fact-label">Laya read, for Turn left 5°</span><span class="ex-fact-text" id="ex-fact">turns left 5 degrees: the Imp comes closer to the crosshair, from 3 to 2 degrees off.</span></p>
+          <p class="ex-note" id="ex-note">n/a: not asked (no door in reach, or an action this model was not trained on).</p>
+        </div>
+      </figure>
+<div class="stats"><div class="stat"><b>1,574</b><span>decisions, every one Laya's</span></div><div class="stat"><b>184</b><span>shots for 16 kills, pistol only</span></div><div class="stat"><b>28</b><span>shots fired while stepping away from a close enemy</span></div><div class="stat"><b>190 ms</b><span>median time per Laya call</span></div></div>
+<div class="chart" id="chart-curve"><h4>Kills and health through the game</h4><p class="sub">Fourteen kills in the first 66 seconds, then two minutes of exploring at a steady 35 health.</p><svg viewBox="0 0 900 300" role="img" aria-label="Kills rise from 0 to 14 in the first 66 seconds and reach 16 at 160 seconds; health falls from 100 to 35 by 63 seconds and stays there"></svg><div class="tip" role="status"></div></div>
+<div class="chart" id="chart-actions"><h4>What Laya chose across 1,574 decisions</h4><p class="sub">Forward and 30° turns are three quarters of all actions; 184 shots produced 16 kills.</p><svg viewBox="0 0 900 330" role="img" aria-label="Actions chosen: forward 728, turn left 30 degrees 351, turn right 30 degrees 207, shoot 184, turn left 5 degrees 37, turn right 5 degrees 32, use 18, step right 12, step left 3, back 2"></svg><div class="tip" role="status"></div></div><details class="numbers"><summary>Show the numbers behind these charts</summary>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Action</th><th class="num">Chosen</th></tr></thead>
+          <tbody><tr><td>Forward</td><td class="num">728</td></tr><tr><td>Turn left 30°</td><td class="num">351</td></tr><tr><td>Turn right 30°</td><td class="num">207</td></tr><tr><td>Shoot</td><td class="num">184</td></tr><tr><td>Turn left 5°</td><td class="num">37</td></tr><tr><td>Turn right 5°</td><td class="num">32</td></tr><tr><td>Use</td><td class="num">18</td></tr><tr><td>Step right</td><td class="num">12</td></tr><tr><td>Step left</td><td class="num">3</td></tr><tr><td>Back</td><td class="num">2</td></tr></tbody>
+        </table></div>
+        <p>Kills by game time (seconds): 1 at 2.0, 2 at 2.8, 3 at 3.3, 4 at 22.3, 5 at 24.5, 6 at 36.8, 7 at 46.1, 8 at 48.0, 9 at 53.1, 10 at 54.8, 11 at 58.0, 12 at 59.2, 13 at 64.7, 14 at 65.9, 15 at 151.6, 16 at 160.7. Health: 100, then 92 at 20.4 s, 68 at 51.4 s, 44 at 58.4 s, 35 from 62.9 s to the end.</p>
+      </details>
+<figure class="wide"><img src="media/filmstrip.jpg" alt="The whole game in 18 frames" loading="lazy"><figcaption>The whole game in 18 frames, one every 10 seconds of game time. The health counter reads 100 at the start and 35 for the last two minutes.</figcaption></figure>
+<figure class="wide"><img src="media/still-backoff-zombieman.jpg" alt="A Zombieman in the crosshair" loading="lazy"><figcaption>Step 184: a Zombieman 123 units away. Laya fires and backs away from it in the same tics.</figcaption></figure>
+<figure class="wide"><img src="media/still-imp-ahead.jpg" alt="An Imp&#x27;s fireball incoming" loading="lazy"><figcaption>Step 463: an Imp's fireball in flight and a shotgun guy in the room. Laya turns 5° left to line up the Imp, with a P(yes) of 0.854.</figcaption></figure>
+</section>
+<section id="proof"><span class="sec-num">14</span><h2>Proof, not promises</h2>
+<div class="plain"><span class="label">In plain words</span><p>anyone can claim a score. I made every game checkable: the decision log cannot be edited without breaking it, and the game itself can be replayed in the engine to show the same result.</p></div>
+<p>Snake and 2048 had a referee: the arena server keeps its own record of every game. Doom runs on my own machine, so I built the proof in two layers:</p>
+<ol><li><strong>A hash-chained log.</strong> Each line stores the full decision (the state, all 11 questions, every probability and the chosen action) together with <code>hash = sha256(previous hash + "|" + this line)</code>. Change one past action and every hash after it breaks.</li><li><strong>The engine's own recording.</strong> Every game writes a Doom demo file, and its sha256 fingerprint goes into the final record. Replaying the file in the engine reproduces the same kills and the same ending, tic for tic. The video above is exactly that replay.</li></ol>
+<figure class="wide"><img src="media/dash-audit.jpg" alt="The audit view for the 16-kill game" loading="lazy"><figcaption>The audit view for the 16-kill game: the chain is intact over 1,574 lines, there are zero fallbacks, the recording matches its sha256 (2423ad2e2c051d27...), and the steps match the recorded episode.</figcaption></figure>
+</section>
+<section id="challenges"><span class="sec-num">15</span><h2>Challenges, and how each was solved</h2>
+<p>Each entry is a real failure from my logs:</p>
+<ul><li><strong>Frozen aim.</strong> Laya hovered just off target, turning back and forth. 10° turns were too coarse to aim with, so turning was split into 5° for aiming and 30° for looking around.</li><li><strong>Ping-pong.</strong> Forward, back, forward, back. Memory of the last action, of moves that just stalled and of doors already pressed went into the facts, and the reader scores an undo low.</li><li><strong>The chainsaw trap.</strong> After picking up a chainsaw, every shot "missed" beyond 64 units, because Doom switches to a new weapon automatically. The game argument <code>+neverswitchonpickup 1</code> keeps the pistol.</li><li><strong>A generous crosshair.</strong> The player wasted rounds on enemies it could not hit; one Demon 45° off counted as "in the crosshair". Now the enemy's label must cover the screen centre and the angle must fall within its collision radius.</li><li><strong>Frames going black.</strong> The dashboard's live view blinked black and then stopped at step 87. On Windows, reading a frame while it was being replaced raised a file-lock error that killed the saver thread. The thread now retries, and the page loads each new frame off-screen before swapping it in.</li><li><strong>A hash taken too early.</strong> The recording's sha256 did not match the file on disk. The engine finishes writing the demo when it closes, so the hash is now taken after closing.</li><li><strong>Lag in real time.</strong> Five- to sixteen-second freezes happened when two Laya processes and a browser shared a 6 GB GPU. The fix was one job at a time, and turn-based scoring.</li><li><strong>Ctrl+C.</strong> Stopping a game by hand froze it and lost the recording, because Ctrl+C also reaches the engine, which runs as a separate process. Games now end through a time limit only.</li></ul>
+</section>
+<section id="what-is-new"><span class="sec-num">16</span><h2>What is new in this approach</h2>
+<ol><li><strong>The game world as one-step facts.</strong> No pixels, no path search, no lookahead: one true sentence per action about what it does right now.</li><li><strong>One yes/no question per action, all in one forward pass.</strong> Christian's "should I shoot?" insight, generalised to every action. Each decision comes with a readable reason per option.</li><li><strong>No overrides.</strong> Failures are fixed by adding the missing fact, so 100% of actions remain the model's own.</li><li><strong>Labels from written priorities.</strong> No human annotation: a fixed reading of the stated priorities labels 64,248 questions, and the fine-tuned student scores higher than that teacher (196 kills against 163).</li><li><strong>A combined action, chosen by geometry.</strong> Fire while stepping away from the closest enemy, sideways if a wall is behind, described in the shoot fact so the model weighs it.</li><li><strong>Every game provable.</strong> A hash-chained decision log, plus the engine's own replay of the recording.</li></ol>
+</section>
+<section id="limits"><span class="sec-num">17</span><h2>Limits and next steps</h2>
+<ul><li><strong>Train on the back-off.</strong> The wording exists in the facts now; another round of data would teach Laya to weigh it rather than inherit it.</li><li><strong>Reach the exit.</strong> Exit switches need their own facts.</li><li><strong>Make real time competitive.</strong> Fewer questions per decision, a quantised model and a server GPU would bring each decision within a few tics.</li><li><strong>Choose the weapon.</strong> The pistol averages 10 damage per shot; the shotgun is far better against a Demon. A weapon-choice fact is the obvious next step.</li><li><strong>A safe stop.</strong> A stop key that closes the engine and seals the recording.</li></ul>
+</section>
+<section id="try-it-yourself"><span class="sec-num">18</span><h2>Try it yourself</h2>
+<p>The code is public at <a href="https://github.com/Anexus5919/codeyatri-laya">github.com/Anexus5919/codeyatri-laya</a>. The fine-tuned checkpoints and datasets are not published, so you would build and train your own with the same scripts:</p>
+<div class="code"><div class="code-head"><span>shell</span><button type="button" data-copy>Copy</button></div><pre><code>git clone https://github.com/Anexus5919/codeyatri-laya
+cd codeyatri-laya
+python -m venv .venv &amp;&amp; .venv\Scripts\activate
+pip install -e ".[doom,dev]"
+
+<span class="c"># build a dataset from offline games, labelled by the rule reader</span>
+python scripts/make_doom_dataset.py --out data/ftdoom --workers 4
+
+<span class="c"># play one game: game window, saved screens, 3 minutes of game time</span>
+python -m laya_agent.doom.runner --scenario freedoom1:E1M2 --model data/ftdoom/ckpt_quick_frozen --frames --visible --minutes 3
+
+<span class="c"># watch it, with every decision, at http://127.0.0.1:8770</span>
+python -m laya_agent.viewer.arena_web runs --port 8770</code></pre></div>
+</section>
+<section id="credits"><span class="sec-num">19</span><h2>Credits and references</h2>
+<ul><li>Christian Graham, <a href="https://medium.com/@christian.graham_49279/laya-a-free-local-alternative-to-jev-and-it-can-even-play-doom-ish-42e2292e541e">"Laya: a free, local alternative to Jev, and it can even play Doom(ish)"</a>, the post that started this.</li><li><a href="https://www.linkedin.com/in/shivamrpmishra/">Shivam Mishra</a>, creator of the problem statement "Beat the Bot: Teach Laya to Play" at the Genesis 2.0 hackathon.</li><li>My teammates Piyush Shukla, Mayuresh Sarkale and Vidushi Singh.</li><li>Laya by Convai Innovations: <a href="https://github.com/NandhaKishorM/laya">source and documentation</a> (Apache-2.0) and <a href="https://huggingface.co/convaiinnovations/laya">model checkpoints</a>.</li><li>M. Kempka, M. Wydmuch, G. Runc, J. Toczek and W. Jaśkowski, <a href="https://arxiv.org/abs/1605.02097">"ViZDoom: A Doom-based AI Research Platform for Visual Reinforcement Learning"</a>, IEEE CIG 2016. Project site: <a href="https://vizdoom.farama.org">vizdoom.farama.org</a>.</li><li><a href="https://freedoom.github.io/">Freedoom</a>, free game data for Doom engines.</li><li>The <a href="https://doomwiki.org/wiki/Demon">Doom Wiki</a> for monster hit points and weapon damage.</li><li>The <a href="https://topgameai.com/arena">TopGameAI Arena</a>, which hosted the Snake and 2048 stages.</li></ul>
+<p><em>Every number in this post comes from the project's logs and experiment notes (docs/experiments.md, E14 to E16). The footage is a replay of session doom-5be3dd17, whose recording has the sha256 2423ad2e2c051d27e1ed9a706c5ae2b7f4ac3bcb950fcb8b8bd914f16188c5e0.</em></p>
+</section>
+    <div class="author">
+      <div class="avatar" aria-hidden="true">AS</div>
+      <div>
+        <p><strong>Adarsh Singh</strong> builds tools that make AI decisions explainable and checkable. He built this project with Piyush Shukla, Mayuresh Sarkale and Vidushi Singh, and contributes to open source on GitHub as <a href="https://github.com/Anexus5919">Anexus5919</a>.</p>
+        <p>If you build on this, I would love to see what Laya plays next.</p>
+      </div>
+    </div>
+  </article>
+</div>
+
+<script>
+(() => {
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs = {}, parent) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+  const txt = (parent, x, y, s, attrs = {}) => { const t = el("text", { x, y, ...attrs }, parent); t.textContent = s; return t; };
+
+  // Hero loop plays only when motion is welcome
+  const loop = document.getElementById("hero-loop");
+  if (loop && !reduce) { loop.play().catch(() => {}); }
+
+  // Copy buttons
+  document.querySelectorAll("[data-copy]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const code = b.closest(".code").querySelector("code").innerText;
+      navigator.clipboard.writeText(code).then(() => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1400); })
+        .catch(() => { b.textContent = "Select and copy"; });
+    });
+  });
+
+  // Contents rail: mark the section being read
+  const links = [...document.querySelectorAll(".toc a")];
+  if ("IntersectionObserver" in window && links.length) {
+    const byId = Object.fromEntries(links.map((a) => [a.getAttribute("href").slice(1), a]));
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) { links.forEach((a) => a.classList.remove("is-current")); byId[e.target.id]?.classList.add("is-current"); }
+      });
+    }, { rootMargin: "-20% 0px -70% 0px" });
+    document.querySelectorAll("article section[id]").forEach((s) => io.observe(s));
+  }
+
+  // Tooltip helper
+  function tipFor(chart) {
+    const tip = chart.querySelector(".tip");
+    return {
+      show(x, y, title, lines) {
+        tip.replaceChildren();
+        const s = document.createElement("strong"); s.textContent = title; tip.appendChild(s);
+        lines.forEach((l) => { tip.appendChild(document.createElement("br")); tip.appendChild(document.createTextNode(l)); });
+        const r = chart.getBoundingClientRect();
+        tip.style.left = Math.min(Math.max(x, 70), r.width - 70) + "px";
+        tip.style.top = y + "px";
+        tip.classList.add("show");
+      },
+      hide() { tip.classList.remove("show"); },
+    };
+  }
+  function svgPoint(svg, evt) {
+    const r = svg.getBoundingClientRect();
+    const vb = svg.viewBox.baseVal;
+    return { x: (evt.clientX - r.left) * (vb.width / r.width), y: (evt.clientY - r.top) * (vb.height / r.height), sx: r.width / vb.width, sy: r.height / vb.height, left: r.left, top: r.top };
+  }
+  // A bar with a square baseline and a 4px rounded data end
+  function barPath(x, y, w, h) {
+    const r = Math.min(4, w, h / 2);
+    return `M${x} ${y} H${x + w - r} A${r} ${r} 0 0 1 ${x + w} ${y + r} V${y + h - r} A${r} ${r} 0 0 1 ${x + w - r} ${y + h} H${x} Z`;
+  }
+
+  // Horizontal bar chart
+  function hbars(id, rows, opts) {
+    const chart = document.getElementById(id);
+    if (!chart) return;
+    const svg = chart.querySelector("svg");
+    const W = 900, left = opts.left || 230, right = 60, top = 10, rowH = opts.rowH || 44, barH = 20;
+    const max = opts.max;
+    const plotW = W - left - right;
+    const g = el("g", { class: "grid" }, svg);
+    const H = top + rows.length * rowH + 26;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    opts.ticks.forEach((t) => {
+      const x = left + (t / max) * plotW;
+      el("line", { x1: x, x2: x, y1: top - 4, y2: top + rows.length * rowH }, g);
+      txt(svg, x, top + rows.length * rowH + 18, t.toLocaleString("en-US"), { "text-anchor": "middle" });
+    });
+    const tip = tipFor(chart);
+    rows.forEach((r, i) => {
+      const y = top + i * rowH + (rowH - barH) / 2;
+      const w = Math.max(2, (r.v / max) * plotW);
+      const grp = el("g", { tabindex: "0", role: "img", "aria-label": `${r.label}: ${r.v}` }, svg);
+      txt(grp, left - 12, y + barH / 2 + 4, r.label, { "text-anchor": "end", class: "lbl" });
+      el("path", { d: barPath(left, y, w, barH), class: "bar" + (r.hi ? " hi" : "") }, grp);
+      txt(grp, left + w + 8, y + barH / 2 + 4, r.v.toLocaleString("en-US"), { class: "val" });
+      const hit = el("rect", { x: 0, y: top + i * rowH, width: W, height: rowH, class: "hit" }, grp);
+      const show = () => {
+        grp.classList.add("hover");
+        const b = svg.getBoundingClientRect(), c = chart.getBoundingClientRect();
+        const sx = b.width / W;
+        tip.show((left + w) * sx + (b.left - c.left), (y) * sx + (b.top - c.top) - 6, `${r.v.toLocaleString("en-US")} ${opts.unit}`, [r.label, ...(r.extra || [])]);
+      };
+      const hide = () => { grp.classList.remove("hover"); tip.hide(); };
+      hit.addEventListener("pointerenter", show); hit.addEventListener("pointerleave", hide);
+      grp.addEventListener("focus", show); grp.addEventListener("blur", hide);
+    });
+  }
+
+  hbars("chart-kills", [
+    { label: "Random actions", v: 34, extra: ["deadly corridor 0 of 3", "10 deaths"] },
+    { label: "Untrained Laya", v: 51, extra: ["deadly corridor 0 of 3", "9 deaths"] },
+    { label: "Rule reader (labels)", v: 163, extra: ["deadly corridor 2 of 3", "9 deaths"] },
+    { label: "Fine-tuned Laya", v: 196, hi: true, extra: ["deadly corridor 3 of 3", "6 deaths"] },
+  ], { max: 200, ticks: [0, 50, 100, 150, 200], unit: "kills", left: 200 });
+
+  hbars("chart-actions", [
+    { label: "Forward", v: 728 }, { label: "Turn left 30°", v: 351 }, { label: "Turn right 30°", v: 207 },
+    { label: "Shoot", v: 184, hi: true, extra: ["16 kills", "28 while stepping away"] }, { label: "Turn left 5°", v: 37 },
+    { label: "Turn right 5°", v: 32 }, { label: "Use", v: 18 }, { label: "Step right", v: 12 }, { label: "Step left", v: 3 },
+    { label: "Back", v: 2 },
+  ], { max: 800, ticks: [0, 200, 400, 600, 800], unit: "times", left: 150, rowH: 29 });
+
+  // Kills and health: two small multiples sharing the time axis
+  (function curve() {
+    const chart = document.getElementById("chart-curve");
+    if (!chart) return;
+    const svg = chart.querySelector("svg");
+    const P = [[0.2,0,100],[2.03,0,100],[2.03,1,100],[2.83,1,100],[2.83,2,100],[3.29,2,100],[3.29,3,100],[6.49,3,100],[6.49,3,101],[20.43,3,101],[20.43,3,92],[22.26,3,92],[22.26,4,92],[24.54,4,92],[24.54,5,92],[36.77,5,92],[36.77,6,92],[46.14,6,92],[46.14,7,92],[47.97,7,92],[47.97,8,92],[51.4,8,92],[51.4,8,68],[53.11,8,68],[53.11,9,68],[54.83,9,68],[54.83,10,68],[58.03,10,68],[58.03,11,68],[58.37,11,68],[58.37,11,44],[59.17,11,44],[59.17,12,44],[62.94,12,44],[62.94,12,35],[64.66,12,35],[64.66,13,35],[65.91,13,35],[65.91,14,35],[151.63,14,35],[151.63,15,35],[160.66,15,35],[160.66,16,35],[180,16,35]];
+    const W = 900, L = 70, R = 30, plotW = W - L - R;
+    const panels = [
+      { key: 1, name: "Kills", top: 14, h: 100, max: 16, ticks: [0, 8, 16], color: "var(--accent)" },
+      { key: 2, name: "Health", top: 164, h: 100, max: 110, ticks: [0, 50, 100], color: "var(--series-2)" },
+    ];
+    const X = (t) => L + (t / 180) * plotW;
+    const grid = el("g", { class: "grid" }, svg);
+    panels.forEach((p) => {
+      const Y = (v) => p.top + p.h - (v / p.max) * p.h;
+      p.Y = Y;
+      p.ticks.forEach((t) => { el("line", { x1: L, x2: W - R, y1: Y(t), y2: Y(t) }, grid); txt(svg, L - 10, Y(t) + 4, String(t), { "text-anchor": "end" }); });
+      txt(svg, L, p.top - 2, p.name, { class: "lbl" });
+      const d = P.map((q, i) => `${i ? "L" : "M"}${X(q[0]).toFixed(1)} ${Y(q[p.key]).toFixed(1)}`).join(" ");
+      el("path", { d: d + ` L${X(180)} ${p.top + p.h} L${X(P[0][0])} ${p.top + p.h} Z`, fill: p.color, opacity: "0.1", stroke: "none" }, svg);
+      el("path", { d, fill: "none", stroke: p.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+      const last = P[P.length - 1];
+      el("circle", { cx: X(last[0]), cy: Y(last[p.key]), r: 4.5, fill: p.color, stroke: "var(--surface)", "stroke-width": 2 }, svg);
+      txt(svg, X(last[0]) - 8, Y(last[p.key]) - 10, String(last[p.key]), { "text-anchor": "end", class: "val" });
+    });
+    [0, 30, 60, 90, 120, 150, 180].forEach((t) => txt(svg, X(t), 290, t === 0 ? "0 s" : `${t}`, { "text-anchor": "middle" }));
+    const cross = el("line", { y1: 8, y2: 268, stroke: "var(--ink-2)", "stroke-width": 1, opacity: 0 }, svg);
+    const hit = el("rect", { x: L, y: 0, width: plotW, height: 272, class: "hit" }, svg);
+    const tip = tipFor(chart);
+    const at = (t) => { let v = P[0]; for (const q of P) { if (q[0] <= t) v = q; else break; } return v; };
+    const move = (evt) => {
+      const pt = svgPoint(svg, evt);
+      const t = Math.max(0, Math.min(180, ((pt.x - L) / plotW) * 180));
+      const v = at(t);
+      cross.setAttribute("x1", X(t)); cross.setAttribute("x2", X(t)); cross.setAttribute("opacity", 1);
+      const c = chart.getBoundingClientRect();
+      tip.show(evt.clientX - c.left, (pt.top - c.top) + 12 * pt.sy, `${t.toFixed(1)} s`, [`kills ${v[1]}`, `health ${v[2]}`]);
+    };
+    hit.addEventListener("pointermove", move);
+    hit.addEventListener("pointerleave", () => { cross.setAttribute("opacity", 0); tip.hide(); });
+  })();
+
+  // Decision explorer: the panel follows the video
+  (function explorer() {
+    const video = document.getElementById("game");
+    if (!video) return;
+    const LABELS = { shoot: "Shoot", turn_left: "Turn left 5°", turn_right: "Turn right 5°", turn_left_big: "Turn left 30°", turn_right_big: "Turn right 30°", turn_around: "Turn around", forward: "Forward", backward: "Back", strafe_left: "Step left", strafe_right: "Step right", use: "Use" };
+    const bars = document.getElementById("ex-bars");
+    const stepEl = document.getElementById("ex-step"), timeEl = document.getElementById("ex-time"), stateEl = document.getElementById("ex-state");
+    const factEl = document.getElementById("ex-fact"), factLabel = document.getElementById("ex-fact-label");
+    let data = null, tics = [], current = -1, hovering = -1;
+
+    document.querySelectorAll(".ex-jumps button").forEach((b) => b.addEventListener("click", () => {
+      video.currentTime = Number(b.dataset.t);
+      if (data) render(indexAt(video.currentTime));
+    }));
+
+    const indexAt = (sec) => {
+      const tic = Math.floor(sec * 35);
+      let lo = 0, hi = tics.length - 1, ans = 0;
+      while (lo <= hi) { const m = (lo + hi) >> 1; if (tics[m] <= tic) { ans = m; lo = m + 1; } else hi = m - 1; }
+      return ans;
+    };
+    const showFact = (d, a) => {
+      factLabel.textContent = (a === d.c ? "Laya read, for " : "The sentence for ") + LABELS[data.actions[a]];
+      factEl.textContent = d.f[a] || "Not asked at this step.";
+    };
+    function render(i) {
+      if (!data || i === current) return;
+      current = i;
+      const d = data.decisions[i];
+      stepEl.textContent = `Step ${d.s}`;
+      timeEl.textContent = `${(d.t / 35).toFixed(1)} s · ${d.ms} ms`;
+      stateEl.textContent = d.x.replace(/^Doom\.\s*/, "");
+      [...bars.children].forEach((li, a) => {
+        const p = d.p[a];
+        li.className = p === null ? "na" : a === d.c ? "chosen" : "";
+        const fill = li.querySelector(".fill");
+        const track = li.querySelector(".track");
+        if (p === null) { track.replaceChildren(); }
+        else {
+          let f = fill;
+          if (!f) { f = document.createElement("span"); f.className = "fill"; track.appendChild(f); }
+          f.style.width = (p * 100).toFixed(1) + "%";
+        }
+        li.querySelector(".v").textContent = p === null ? "n/a" : p.toFixed(3);
+      });
+      showFact(d, hovering >= 0 && d.p[hovering] !== null ? hovering : d.c);
+    }
+
+    [...bars.children].forEach((li, a) => {
+      li.tabIndex = 0;
+      const on = () => { hovering = a; if (data && current >= 0) showFact(data.decisions[current], data.decisions[current].p[a] === null ? data.decisions[current].c : a); };
+      const off = () => { hovering = -1; if (data && current >= 0) showFact(data.decisions[current], data.decisions[current].c); };
+      li.addEventListener("pointerenter", on); li.addEventListener("pointerleave", off);
+      li.addEventListener("focus", on); li.addEventListener("blur", off);
+    });
+
+    fetch("media/decisions.json").then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); }).then((j) => {
+      data = j; tics = j.decisions.map((d) => d.t);
+      current = -1;
+      render(indexAt(video.currentTime || 1855 / 35));
+      const tick = () => { render(indexAt(video.currentTime)); };
+      video.addEventListener("timeupdate", tick);
+      video.addEventListener("seeked", tick);
+      if ("requestVideoFrameCallback" in video) {
+        const loopFrames = () => { tick(); video.requestVideoFrameCallback(loopFrames); };
+        video.requestVideoFrameCallback(loopFrames);
+      }
+    }).catch(() => {
+      document.getElementById("ex-note").textContent = "The decision data did not load, so the panel shows step 463 only. The video still plays.";
+    });
+  })();
+})();
+</script>
+</body>
+</html>
